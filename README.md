@@ -150,8 +150,25 @@ Dùng **ObjectStream** truyền hai loại object:
 ### Yêu cầu
 - **JDK 8 trở lên** (dự án đã thử biên dịch với JDK 21).
 - **NetBeans 12+** (hoặc Apache NetBeans 17+).
+- **XAMPP** (cho MySQL) — phần 4.0 bên dưới.
 
-### Các bước
+### 4.0. Chuẩn bị MySQL (XAMPP)
+
+1. Mở **XAMPP Control Panel** → **Start** các dịch vụ **Apache** và **MySQL**.
+2. Mở trình duyệt → http://localhost/phpmyadmin
+3. Tab **SQL** → paste toàn bộ nội dung `db/schema.sql` → nhấn **Go**.
+   Sẽ tạo database `qlhanghoa` + bảng `hanghoa` + 3 dòng mẫu.
+4. Tải driver **MySQL Connector/J 8.x**:
+   https://dev.mysql.com/downloads/connector/j/ (Platform Independent .zip).
+   Giải nén, lấy `mysql-connector-j-8.x.x.jar` → đặt vào
+   `ServerApp/lib/mysql-connector-j.jar` (đổi tên cho đúng).
+5. Trong NetBeans, chuột phải **ServerApp → Properties → Libraries →
+   Add JAR/Folder** → chọn file JAR vừa copy.
+
+Nếu cần đổi user/pass MySQL, sửa trong
+`ServerApp/src/serverapp/DBConfig.java` (mặc định XAMPP: `root` / rỗng).
+
+### Các bước chạy
 
 1. **Mở 2 project riêng**
    - NetBeans → `File > Open Project...` → chọn thư mục `ServerApp`.

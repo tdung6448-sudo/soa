@@ -1,81 +1,142 @@
 package serverapp;
 
 import common.HangHoa;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Service quản lý danh sách hàng hóa ở phía Server.
- * Dữ liệu lưu trong ArrayList<HangHoa>.
+ * Service quản lý hàng hóa — KẾT NỐI MYSQL (XAMPP) qua JDBC.
  *
- * Các phương thức được đồng bộ (synchronized) vì có nhiều Thread
- * (mỗi Client một Thread) có thể truy cập đồng thời.
+ * Mỗi phương thức mở 1 Connection ngắn, dùng try-with-resources
+ * để đảm bảo đóng Connection/Statement/ResultSet đúng cách.
+ * PreparedStatement được dùng để tránh SQL Injection.
  */
 public class HangHoaService {
 
-    private final List<HangHoa> danhSach = new ArrayList<>();
-
     public HangHoaService() {
-        // Dữ liệu mẫu ban đầu
-        danhSach.add(new HangHoa("MH001", "Bút bi Thiên Long", 5000, 200, "Văn phòng phẩm"));
-        danhSach.add(new HangHoa("MH002", "Sữa tươi Vinamilk", 32000, 50, "Thực phẩm"));
-        danhSach.add(new HangHoa("MH003", "Áo thun nam", 150000, 30, "Thời trang"));
+        // Kiểm tra kết nối DB ngay khi khởi động Server.
+        try (Connection c = DBConfig.open()) {
+            System.out.println("Đã kết nối MySQL: " + DBConfig.URL);
+        } catch (SQLException ex) {
+            throw new RuntimeException(
+                "Không kết nối được MySQL. Kiểm tra XAMPP đã Start MySQL và chạy db/schema.sql chưa. "
+                + "Chi tiết: " + ex.getMessage(), ex);
+        }
     }
 
-    /** Thêm hàng hóa mới, trả về false nếu mã đã tồn tại. */
-    public synchronized boolean them(HangHoa hh) {
+    /** Thêm hàng hóa. Trả về false nếu mã trùng (PRIMARY KEY) hoặc lỗi. */
+    public boolean them(HangHoa hh) {
         if (hh == null || hh.getMaHH() == null) return false;
-        if (timTheoMa(hh.getMaHH()) != null) return false;
-        danhSach.add(hh);
-        return true;
+        String sql = "INSERT INTO hanghoa(maHH, tenHH, donGia, soLuong, loaiHH) VALUES (?,?,?,?,?)";
+        try (Connection c = DBConfig.open();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, hh.getMaHH());
+            ps.setString(2, hh.getTenHH());
+            ps.setDouble(3, hh.getDonGia());
+            ps.setInt   (4, hh.getSoLuong());
+            ps.setString(5, hh.getLoaiHH());
+            return ps.executeUpdate() > 0;
+        } catch (SQLException ex) {
+            // Trùng PK sẽ ném SQLIntegrityConstraintViolationException
+            System.err.println("[them] " + ex.getMessage());
+            return false;
+        }
     }
 
-    /** Lấy toàn bộ danh sách (copy để tránh sửa đổi ngoài ý muốn). */
-    public synchronized List<HangHoa> xemTatCa() {
-        return new ArrayList<>(danhSach);
+    /** Lấy toàn bộ danh sách. */
+    public List<HangHoa> xemTatCa() {
+        String sql = "SELECT maHH, tenHH, donGia, soLuong, loaiHH FROM hanghoa ORDER BY maHH";
+        List<HangHoa> ds = new ArrayList<>();
+        try (Connection c = DBConfig.open();
+             PreparedStatement ps = c.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) ds.add(map(rs));
+        } catch (SQLException ex) {
+            System.err.println("[xemTatCa] " + ex.getMessage());
+        }
+        return ds;
     }
 
-    /** Tìm chính xác theo mã. */
-    public synchronized HangHoa timTheoMa(String maHH) {
+    /** Tìm chính xác theo mã. Trả null nếu không có. */
+    public HangHoa timTheoMa(String maHH) {
         if (maHH == null) return null;
-        for (HangHoa hh : danhSach) {
-            if (hh.getMaHH().equalsIgnoreCase(maHH)) {
-                return hh;
+        String sql = "SELECT maHH, tenHH, donGia, soLuong, loaiHH FROM hanghoa WHERE maHH = ?";
+        try (Connection c = DBConfig.open();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, maHH);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) return map(rs);
             }
+        } catch (SQLException ex) {
+            System.err.println("[timTheoMa] " + ex.getMessage());
         }
         return null;
     }
 
-    /** Tìm kiếm theo mã hoặc tên (không phân biệt hoa thường, chứa chuỗi). */
-    public synchronized List<HangHoa> timKiem(String keyword) {
-        List<HangHoa> ketQua = new ArrayList<>();
-        if (keyword == null || keyword.trim().isEmpty()) return ketQua;
-        String key = keyword.toLowerCase().trim();
-        for (HangHoa hh : danhSach) {
-            if (hh.getMaHH().toLowerCase().contains(key)
-                    || hh.getTenHH().toLowerCase().contains(key)) {
-                ketQua.add(hh);
+    /** Tìm kiếm LIKE theo mã hoặc tên, không phân biệt hoa/thường. */
+    public List<HangHoa> timKiem(String keyword) {
+        List<HangHoa> ds = new ArrayList<>();
+        if (keyword == null || keyword.trim().isEmpty()) return ds;
+        String sql = "SELECT maHH, tenHH, donGia, soLuong, loaiHH FROM hanghoa "
+                   + "WHERE LOWER(maHH) LIKE ? OR LOWER(tenHH) LIKE ? ORDER BY maHH";
+        String like = "%" + keyword.toLowerCase().trim() + "%";
+        try (Connection c = DBConfig.open();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, like);
+            ps.setString(2, like);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) ds.add(map(rs));
             }
+        } catch (SQLException ex) {
+            System.err.println("[timKiem] " + ex.getMessage());
         }
-        return ketQua;
+        return ds;
     }
 
-    /** Cập nhật thông tin hàng hóa theo mã. */
-    public synchronized boolean capNhat(HangHoa hh) {
+    /** Cập nhật theo mã. */
+    public boolean capNhat(HangHoa hh) {
         if (hh == null) return false;
-        HangHoa cu = timTheoMa(hh.getMaHH());
-        if (cu == null) return false;
-        cu.setTenHH(hh.getTenHH());
-        cu.setDonGia(hh.getDonGia());
-        cu.setSoLuong(hh.getSoLuong());
-        cu.setLoaiHH(hh.getLoaiHH());
-        return true;
+        String sql = "UPDATE hanghoa SET tenHH=?, donGia=?, soLuong=?, loaiHH=? WHERE maHH=?";
+        try (Connection c = DBConfig.open();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, hh.getTenHH());
+            ps.setDouble(2, hh.getDonGia());
+            ps.setInt   (3, hh.getSoLuong());
+            ps.setString(4, hh.getLoaiHH());
+            ps.setString(5, hh.getMaHH());
+            return ps.executeUpdate() > 0;
+        } catch (SQLException ex) {
+            System.err.println("[capNhat] " + ex.getMessage());
+            return false;
+        }
     }
 
-    /** Xóa hàng hóa theo mã. */
-    public synchronized boolean xoa(String maHH) {
-        HangHoa hh = timTheoMa(maHH);
-        if (hh == null) return false;
-        return danhSach.remove(hh);
+    /** Xóa theo mã. */
+    public boolean xoa(String maHH) {
+        if (maHH == null) return false;
+        String sql = "DELETE FROM hanghoa WHERE maHH = ?";
+        try (Connection c = DBConfig.open();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, maHH);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException ex) {
+            System.err.println("[xoa] " + ex.getMessage());
+            return false;
+        }
+    }
+
+    /** Map 1 dòng ResultSet sang HangHoa. */
+    private static HangHoa map(ResultSet rs) throws SQLException {
+        return new HangHoa(
+            rs.getString("maHH"),
+            rs.getString("tenHH"),
+            rs.getDouble("donGia"),
+            rs.getInt   ("soLuong"),
+            rs.getString("loaiHH")
+        );
     }
 }
