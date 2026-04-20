@@ -1,0 +1,18 @@
+# Java build output
+build/
+dist/
+*.class
+
+# NetBeans
+nbproject/private/
+nbproject/build-impl.xml
+nbproject/genfiles.properties
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
