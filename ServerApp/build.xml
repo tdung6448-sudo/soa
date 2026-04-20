@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Build file NetBeans chuẩn (Ant). Nhập Project này vào NetBeans bằng
+     File > Open Project... rồi chọn thư mục ServerApp. -->
+<project name="ServerApp" default="default" basedir="." xmlns:ivy="antlib:org.apache.ivy.ant">
+    <description>Builds, tests, and runs the project ServerApp.</description>
+    <import file="nbproject/build-impl.xml"/>
+</project>
